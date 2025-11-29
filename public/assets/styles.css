@@ -1,0 +1,124 @@
+/* ===== Cyber Awareness UI — styles.css ===== */
+:root{
+  --bg:#070b12;
+  --panel:#0d1420;
+  --panel-2:#101a2a;
+  --text:#e6f1ff;
+  --muted:#9fb3c8;
+  --brand:#31e6b7;        
+  --brand-2:#56a8ff;        
+  --danger:#ff6b6b;
+  --warn:#ffd166;
+  --ok:#81f4b6;
+  --ring: 0 0 0 3px rgba(86,168,255,.30);
+  --radius:14px;
+  --shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font: 15px/1.55 "Inter",-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif;
+  color:var(--text);
+  background: radial-gradient(1000px 600px at 10% -20%, #0f1b2e 0%, transparent 60%),
+              radial-gradient(800px 500px at 90% 110%, #0a2020 0%, transparent 60%),
+              var(--bg);
+}
+
+.body-grid::before{
+  content:""; position:fixed; inset:0; pointer-events:none; opacity:.07;
+  background-image:
+    linear-gradient(transparent 23px, rgba(255,255,255,.08) 24px),
+    linear-gradient(90deg, transparent 23px, rgba(255,255,255,.08) 24px);
+  background-size:24px 24px;
+  mask-image: radial-gradient(ellipse at 50% 0%, #000 20%, transparent 65%);
+}
+
+/* Containers */
+.container{max-width:1024px; margin-inline:auto; padding:24px}
+.stack{display:grid; gap:18px}
+
+/* Header / Nav */
+.header{
+  background: linear-gradient(180deg, rgba(17,29,47,.9), rgba(13,20,32,.9));
+  border-bottom:1px solid #1a2a42;
+  box-shadow:var(--shadow);
+  position:sticky; top:0; z-index:10; backdrop-filter: blur(8px);
+}
+.brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.3px}
+.brand .logo{
+  width:28px; height:28px; display:grid; place-items:center;
+  border-radius:8px; background:linear-gradient(135deg,var(--brand),var(--brand-2));
+  color:#06121a; font-weight:800;
+  box-shadow:0 0 0 3px rgba(49,230,183,.25), 0 6px 20px rgba(86,168,255,.3);
+}
+.nav a{
+  color:var(--text); opacity:.85; text-decoration:none; padding:10px 12px; border-radius:10px;
+}
+.nav a:hover{ background:#0e1a2a; opacity:1}
+
+/* Cards */
+.card{
+  background: linear-gradient(180deg, rgba(20,31,48,.9), rgba(14,22,36,.9));
+  border:1px solid #1a2a42; border-radius:var(--radius);
+  padding:18px 18px; box-shadow:var(--shadow);
+}
+.card .card-title{font-weight:700; font-size:20px; margin:0 0 8px}
+.card .subtle{color:var(--muted); margin-top:2px}
+
+/* Buttons */
+.btn{
+  display:inline-flex; align-items:center; gap:10px;
+  padding:10px 14px; border-radius:12px; border:1px solid #1d3357;
+  background:linear-gradient(135deg, #13233a, #0f1a2b); color:var(--text);
+  text-decoration:none; cursor:pointer;
+}
+.btn:hover{ filter:brightness(1.06)}
+.btn-primary{
+  border-color:transparent;
+  background:linear-gradient(135deg, var(--brand), var(--brand-2));
+  color:#09131a; font-weight:700;
+}
+.btn-ghost{background:transparent}
+
+/* Inputs */
+label{display:block; margin:10px 0 6px}
+.input, .select{
+  width:100%; padding:11px 12px; border-radius:10px; color:var(--text);
+  background:#0a1322; border:1px solid #1a2a42; outline:none;
+}
+.input:focus, .select:focus{ box-shadow:var(--ring); border-color:#2a65ff}
+
+
+.choice{
+  border:1px solid #223754; border-radius:12px; padding:10px 12px; display:flex; gap:10px; align-items:flex-start;
+  background:#0b1424; cursor:pointer;
+}
+.choice:hover{ background:#0d192c}
+.choice input{margin-top:4px}
+
+/* Badges/labels */
+.badge{display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; border:1px solid #2a435f; color:#b9d4ff}
+.badge-ok{border-color:#1f4b3f; color:#9bf0c9}
+.badge-warn{border-color:#5a4a1a; color:#ffd166}
+.badge-danger{border-color:#5a1a1a; color:#ff9aa6}
+
+/* Footer */
+.footer{border-top:1px solid #1a2a42; color:var(--muted)}
+
+
+.hx{
+  display:flex; align-items:center; gap:12px; margin:6px 0 10px; font-weight:800; letter-spacing:.2px
+}
+.hx:before{
+  content:""; width:10px; height:10px; border-radius:3px;
+  background:linear-gradient(135deg, var(--brand), var(--brand-2));
+  box-shadow:0 0 0 4px rgba(49,230,183,.18);
+}
+
+/* Utilitaire */
+.row{display:flex; gap:12px; flex-wrap:wrap}
+.center{display:grid; place-items:center}
+.spread{display:flex; align-items:center; justify-content:space-between}
+.mt-1{margin-top:6px} .mt-2{margin-top:12px} .mt-3{margin-top:18px} .mt-4{margin-top:24px}
