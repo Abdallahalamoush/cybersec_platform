@@ -6,6 +6,18 @@ require_auth();
 $user = current_user();
 $userId = $user['id'];
 
+// ---------- Badges ----------
+$badgeStmt = $pdo->prepare("
+    SELECT b.name, b.description, ub.awarded_at
+    FROM user_badges ub
+    JOIN badges b ON b.id = ub.badge_id
+    WHERE ub.user_id = ?
+    ORDER BY ub.awarded_at ASC
+");
+$badgeStmt->execute([$userId]);
+$userBadges = $badgeStmt->fetchAll();
+
+
 // ---------- Résumé des sessions de quiz ----------
 $quizSummaryStmt = $pdo->prepare("
     SELECT 
@@ -105,7 +117,26 @@ include __DIR__ . '/_partials/header.php';
     <a class="btn mt-2" href="/phishing.php">Go to simulation</a>
   </div>
 
+  <div class="card">
+  <div class="hx">Badges</div>
+
+  <?php if (!$userBadges): ?>
+    <p class="subtle">No badges unlocked yet. Keep training to earn them!</p>
+  <?php else: ?>
+    <ul>
+      <?php foreach ($userBadges as $b): ?>
+        <li class="subtle">
+          <strong><?= htmlspecialchars($b['name']) ?></strong><br>
+          <?= htmlspecialchars($b['description']) ?><br>
+          <small>Awarded at: <?= htmlspecialchars($b['awarded_at']) ?></small>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+  <?php endif; ?>
 </div>
+
+</div>
+
 
 <div class="card">
   <div class="hx">Recent quiz sessions</div>

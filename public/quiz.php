@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/badges.php';
+
 require_auth(); // réservé aux utilisateurs connectés
 
 // Nombre de questions par session de quiz
@@ -131,7 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $correct = $currentQuiz['correct_count'];
                         $scorePercent = $totalQuestions > 0 ? ($correct / $totalQuestions) * 100 : 0;
 
-                        // Mise à jour de la session en DB
                         $upd = $pdo->prepare("
                             UPDATE quiz_sessions
                             SET total_questions = ?, correct_answers = ?, score_percent = ?, finished_at = NOW()
@@ -139,14 +140,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ");
                         $upd->execute([$totalQuestions, $correct, $scorePercent, $sessionId]);
 
-                        // Préparer les infos finales pour l'affichage
                         $finalResult = [
                             'total'   => $totalQuestions,
                             'correct' => $correct,
                             'score'   => $scorePercent
                         ];
 
-                        // Supprimer l'état du quiz courant
+                        // 🔥 Recalculate badges after quiz session
+                        recalculate_user_badges($pdo, current_user()['id']);
+
                         clear_current_quiz();
                     }
                 }
