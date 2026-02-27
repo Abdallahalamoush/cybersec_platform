@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (is_rate_limited($pdo, $email, $ip)) {
                 $error = "Trop de tentatives. Réessaye dans 10 minutes.";
             } else {
-                $st = $pdo->prepare("SELECT id, name, email, password_hash FROM users WHERE email = ?");
+                $st = $pdo->prepare("SELECT id, name, email, role, password_hash FROM users WHERE email = ?");
                 $st->execute([$email]);
                 $user = $st->fetch();
 
@@ -36,11 +36,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     // login
                     $_SESSION['user'] = [
-                        'id'    => $user['id'],
-                        'name'  => $user['name'],
-                        'email' => $user['email']
+                    'id'    => $user['id'],
+                    'name'  => $user['name'],
+                    'email' => $user['email'],
+                    'role'  => $user['role'] ?? 'user'
                     ];
-
                     header("Location: /dashboard.php");
                     exit;
                 } else {

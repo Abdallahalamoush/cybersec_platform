@@ -21,6 +21,9 @@
     </div>
     <nav class="nav">
       <a href="/index.php">Accueil</a>
+      <?php if (current_user() && (current_user()['role'] ?? 'user') === 'admin'): ?>
+  <a href="/admin/modules.php">Admin</a>
+<?php endif; ?>
       <?php if (current_user()): ?>
     <a href="/dashboard.php">Dashboard</a>
     <a href="/quiz.php">Quiz</a>
