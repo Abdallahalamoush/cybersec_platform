@@ -3,288 +3,207 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/session.php';
 require_auth();
 
-$user = current_user();
+$user   = current_user();
 $userId = $user['id'];
 
-// ---------- Badges ----------
+// Badges
 $badgeStmt = $pdo->prepare("
     SELECT b.name, b.description, ub.awarded_at
     FROM user_badges ub
     JOIN badges b ON b.id = ub.badge_id
     WHERE ub.user_id = ?
-    ORDER BY ub.awarded_at ASC
+    ORDER BY ub.awarded_at DESC
 ");
 $badgeStmt->execute([$userId]);
 $userBadges = $badgeStmt->fetchAll();
 
-// Last badge (new)
-$lastBadgeStmt = $pdo->prepare("
-    SELECT b.name, b.description, ub.awarded_at
-    FROM user_badges ub
-    JOIN badges b ON b.id = ub.badge_id
-    WHERE ub.user_id = ?
-    ORDER BY ub.awarded_at DESC
-    LIMIT 1
-");
-$lastBadgeStmt->execute([$userId]);
-$lastBadge = $lastBadgeStmt->fetch();
-
-// ---------- Quiz sessions summary ----------
+// Quiz summary
 $quizSummaryStmt = $pdo->prepare("
-    SELECT 
-        COUNT(*) AS total_sessions,
-        COALESCE(AVG(score_percent), 0) AS avg_score
-    FROM quiz_sessions
-    WHERE user_id = ?
+    SELECT COUNT(*) AS total_sessions,
+           COALESCE(AVG(score_percent), 0) AS avg_score
+    FROM quiz_sessions WHERE user_id = ? AND finished_at IS NOT NULL
 ");
 $quizSummaryStmt->execute([$userId]);
-$quizSummary = $quizSummaryStmt->fetch() ?: ['total_sessions' => 0, 'avg_score' => 0];
+$quizSummary = $quizSummaryStmt->fetch() ?: ['total_sessions'=>0,'avg_score'=>0];
 
-// last 5 sessions
+// Quiz attempts
+$attemptsStmt = $pdo->prepare("
+    SELECT COUNT(*) AS total_attempts,
+           COALESCE(SUM(is_correct), 0) AS correct_attempts
+    FROM attempts WHERE user_id = ?
+");
+$attemptsStmt->execute([$userId]);
+$attempts = $attemptsStmt->fetch() ?: ['total_attempts'=>0,'correct_attempts'=>0];
+$quizAccuracy = $attempts['total_attempts'] > 0
+    ? ($attempts['correct_attempts'] / $attempts['total_attempts']) * 100 : 0;
+
+// Phishing summary
+$phishSummaryStmt = $pdo->prepare("
+    SELECT COUNT(*) AS total_attempts,
+           COALESCE(SUM(correct), 0) AS correct_attempts
+    FROM phishing_attempts WHERE user_id = ?
+");
+$phishSummaryStmt->execute([$userId]);
+$phish = $phishSummaryStmt->fetch() ?: ['total_attempts'=>0,'correct_attempts'=>0];
+$phishAccuracy = $phish['total_attempts'] > 0
+    ? ($phish['correct_attempts'] / $phish['total_attempts']) * 100 : 0;
+
+// Last 5 quiz sessions
 $quizSessionsStmt = $pdo->prepare("
     SELECT total_questions, correct_answers, score_percent, started_at, finished_at
-    FROM quiz_sessions
-    WHERE user_id = ?
-    ORDER BY started_at DESC
-    LIMIT 5
+    FROM quiz_sessions WHERE user_id = ? AND finished_at IS NOT NULL
+    ORDER BY started_at DESC LIMIT 5
 ");
 $quizSessionsStmt->execute([$userId]);
 $lastQuizSessions = $quizSessionsStmt->fetchAll();
 
-// last 3 sessions (new: recent activity)
-$recentQuizStmt = $pdo->prepare("
-    SELECT total_questions, correct_answers, score_percent, started_at
-    FROM quiz_sessions
-    WHERE user_id = ?
-    ORDER BY started_at DESC
-    LIMIT 3
-");
-$recentQuizStmt->execute([$userId]);
-$recentQuiz = $recentQuizStmt->fetchAll();
-
-// ---------- Quiz attempts summary (questions) ----------
-$attemptsStmt = $pdo->prepare("
-    SELECT 
-        COUNT(*) AS total_attempts,
-        COALESCE(SUM(is_correct), 0) AS correct_attempts
-    FROM attempts
-    WHERE user_id = ?
-");
-$attemptsStmt->execute([$userId]);
-$attempts = $attemptsStmt->fetch() ?: ['total_attempts' => 0, 'correct_attempts' => 0];
-
-$quizAccuracy = 0;
-if ((int)$attempts['total_attempts'] > 0) {
-    $quizAccuracy = ($attempts['correct_attempts'] / $attempts['total_attempts']) * 100;
-}
-
-// ---------- Phishing simulation summary ----------
-$phishSummaryStmt = $pdo->prepare("
-    SELECT 
-        COUNT(*) AS total_attempts,
-        COALESCE(SUM(correct), 0) AS correct_attempts
-    FROM phishing_attempts
-    WHERE user_id = ?
-");
-$phishSummaryStmt->execute([$userId]);
-$phish = $phishSummaryStmt->fetch() ?: ['total_attempts' => 0, 'correct_attempts' => 0];
-
-$phishAccuracy = 0;
-if ((int)$phish['total_attempts'] > 0) {
-    $phishAccuracy = ($phish['correct_attempts'] / $phish['total_attempts']) * 100;
-}
-
-// last 5 phishing attempts
+// Last 5 phishing attempts
 $phishLastStmt = $pdo->prepare("
     SELECT email_id, user_choice, correct, attempted_at
-    FROM phishing_attempts
-    WHERE user_id = ?
-    ORDER BY attempted_at DESC
-    LIMIT 5
+    FROM phishing_attempts WHERE user_id = ?
+    ORDER BY attempted_at DESC LIMIT 5
 ");
 $phishLastStmt->execute([$userId]);
 $lastPhishAttempts = $phishLastStmt->fetchAll();
 
-// last 3 phishing attempts (new: recent activity)
-$recentPhishStmt = $pdo->prepare("
-    SELECT email_id, correct, attempted_at
-    FROM phishing_attempts
-    WHERE user_id = ?
-    ORDER BY attempted_at DESC
-    LIMIT 3
-");
-$recentPhishStmt->execute([$userId]);
-$recentPhish = $recentPhishStmt->fetchAll();
-
-// ---------- Global module progress ----------
-$stTotal = $pdo->query("
-    SELECT COUNT(*) AS total
-    FROM modules
-    WHERE is_active = 1
-");
+// Module progress
+$stTotal = $pdo->query("SELECT COUNT(*) AS total FROM modules WHERE is_active = 1");
 $totalModules = (int)($stTotal->fetch()['total'] ?? 0);
-
-$stDone = $pdo->prepare("
-    SELECT COUNT(*) AS done
-    FROM module_progress
-    WHERE user_id = ? AND completed = 1
-");
+$stDone = $pdo->prepare("SELECT COUNT(*) AS done FROM module_progress WHERE user_id = ? AND completed = 1");
 $stDone->execute([$userId]);
 $doneModules = (int)($stDone->fetch()['done'] ?? 0);
-
 $progressPercent = $totalModules > 0 ? round(($doneModules / $totalModules) * 100) : 0;
 
-// ---------- Per-module progress (new) ----------
-$modulesStmt = $pdo->query("
-    SELECT id, code, title, description, level, link
-    FROM modules
-    WHERE is_active = 1
-    ORDER BY id ASC
-");
+// Per-module progress
+$modulesStmt = $pdo->query("SELECT id, code, title, description, level, link FROM modules WHERE is_active = 1 ORDER BY id ASC");
 $modules = $modulesStmt->fetchAll();
-
-$progressStmt = $pdo->prepare("
-    SELECT module_code, completed, completed_at
-    FROM module_progress
-    WHERE user_id = ?
-");
+$progressStmt = $pdo->prepare("SELECT module_code, completed, completed_at FROM module_progress WHERE user_id = ?");
 $progressStmt->execute([$userId]);
-$progressRows = $progressStmt->fetchAll();
-
 $progressByCode = [];
-foreach ($progressRows as $r) {
-    if (!empty($r['module_code'])) {
-        $progressByCode[$r['module_code']] = $r;
-    }
+foreach ($progressStmt->fetchAll() as $r) {
+    if (!empty($r['module_code'])) $progressByCode[$r['module_code']] = $r;
 }
 
 include __DIR__ . '/_partials/header.php';
 ?>
 
-<div class="card">
-  <div class="hx">Dashboard — <?= htmlspecialchars($user['name']) ?></div>
-  <p class="subtle">Overview of your training progress on the platform.</p>
+<!-- ── Header ── -->
+<div class="card" style="padding:28px 28px; border-top:2px solid var(--cyan); background:radial-gradient(ellipse at top left, rgba(0, 240, 255, 0.1), transparent 60%), var(--panel);">
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+    <div style="display:flex; align-items:center; gap:20px;">
+      <div style="width:64px; height:64px; border-radius:12px; background:rgba(0, 240, 255, 0.1); border:1px solid rgba(0, 240, 255, 0.3); display:grid; place-items:center; color:var(--cyan); box-shadow:0 0 15px rgba(0, 240, 255, 0.2);">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+      </div>
+      <div>
+        <div style="
+          font-family:var(--mono); font-size:11px;
+          letter-spacing:3px; color:var(--cyan); text-transform:uppercase; margin-bottom:4px;
+        ">OPERATOR DASHBOARD</div>
+        <div class="hx" style="margin-bottom:0; font-size:24px;">
+          <?= htmlspecialchars($user['name']) ?>
+        </div>
+        <p class="subtle mono" style="font-size:12px; margin-top:2px;"><span style="color:var(--text-dim);">ID:</span> <?= htmlspecialchars($user['email']) ?></p>
+      </div>
+    </div>
+    <div style="text-align:right; background:rgba(0,0,0,0.4); padding:16px 24px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+      <div style="
+        font-family:var(--mono); font-size:11px;
+        color:var(--text-dim); margin-bottom:8px; letter-spacing:2px;
+      ">OPERATOR CLEARANCE PROGRESS</div>
+      <div style="
+        font-family:var(--display); font-weight:800; font-size:36px;
+        color:var(--green); text-shadow:0 0 15px rgba(0, 255, 136, 0.5);
+        line-height:1;
+      "><?= $progressPercent ?>%</div>
+      <div style="margin-top:12px; width:200px; margin-left:auto;">
+        <div class="progress-track" style="height:8px;">
+          <div class="progress-fill" style="width:<?= $progressPercent ?>%; background:linear-gradient(90deg, var(--cyan), var(--green)); box-shadow:0 0 10px rgba(0, 255, 136, 0.5);"></div>
+        </div>
+        <div style="font-family:var(--mono); font-size:10px; color:var(--cyan); margin-top:6px; text-align:right; letter-spacing:1px;">
+          <?= $doneModules ?> / <?= $totalModules ?> MODULES COMPLETED
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- ── Key Stats ── -->
 <div class="row">
+  <?php
+    $kstats = [
+      ['value'=>(int)$quizSummary['total_sessions'], 'label'=>'Simulations', 'sub'=>'completed', 'color'=>'var(--cyan)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>'],
+      ['value'=>number_format($quizAccuracy,0).'%',  'label'=>'Accuracy', 'sub'=>$attempts['correct_attempts'].' correct', 'color'=>'var(--green)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>'],
+      ['value'=>number_format($phishAccuracy,0).'%', 'label'=>'Phishing Detection', 'sub'=>$phish['total_attempts'].' inspected', 'color'=>'var(--amber)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'],
+      ['value'=>count($userBadges),                  'label'=>'Badges Acquired', 'sub'=>'clearance level', 'color'=>'var(--purple)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15l-3 3-3-3v-4l3-3 3 3v4z"></path></svg>'],
+    ];
+    foreach ($kstats as $i => $s):
+  ?>
+    <div class="card" style="flex:1; min-width:180px; animation-delay:<?= $i*.06 ?>s; display:flex; flex-direction:column; align-items:flex-start; position:relative; overflow:hidden;">
+      
+      <div style="position:absolute; top:-20px; right:-20px; color:<?= $s['color'] ?>; opacity:0.1; transform:scale(3); pointer-events:none;">
+        <?= $s['icon'] ?>
+      </div>
 
-  <!-- Quiz summary -->
-  <div class="card" style="flex:1; min-width:260px">
-    <div class="card-title">Quiz — Summary</div>
-    <p class="subtle">
-      Total quiz sessions: <strong><?= (int)$quizSummary['total_sessions'] ?></strong><br>
-      Average score: <strong><?= number_format((float)$quizSummary['avg_score'], 1) ?> %</strong><br>
-      Questions answered: <strong><?= (int)$attempts['total_attempts'] ?></strong><br>
-      Correct answers: <strong><?= (int)$attempts['correct_attempts'] ?></strong><br>
-      Accuracy: <strong><?= number_format((float)$quizAccuracy, 1) ?> %</strong>
-    </p>
-    <a class="btn mt-2" href="/quiz.php">Start a new quiz</a>
-  </div>
-
-  <!-- Phishing summary -->
-  <div class="card" style="flex:1; min-width:260px">
-    <div class="card-title">Phishing Simulation — Summary</div>
-    <p class="subtle">
-      Total emails analyzed: <strong><?= (int)$phish['total_attempts'] ?></strong><br>
-      Correct classifications: <strong><?= (int)$phish['correct_attempts'] ?></strong><br>
-      Accuracy: <strong><?= number_format((float)$phishAccuracy, 1) ?> %</strong>
-    </p>
-    <a class="btn mt-2" href="/phishing.php">Go to simulation</a>
-  </div>
-
-  <!-- Last badge (new) -->
-  <div class="card" style="flex:1; min-width:260px">
-    <div class="card-title">Last badge earned</div>
-    <?php if (!$lastBadge): ?>
-      <p class="subtle">No badge yet. Keep training to unlock your first badge!</p>
-    <?php else: ?>
-      <p class="subtle">
-        <strong><?= htmlspecialchars($lastBadge['name']) ?></strong><br>
-        <?= htmlspecialchars($lastBadge['description']) ?><br>
-        <small>Awarded at: <?= htmlspecialchars($lastBadge['awarded_at']) ?></small>
-      </p>
-    <?php endif; ?>
-  </div>
-
-  <!-- Badges list (existing) -->
-  <div class="card" style="flex:1; min-width:260px">
-    <div class="hx">Badges</div>
-
-    <?php if (!$userBadges): ?>
-      <p class="subtle">No badges unlocked yet. Keep training to earn them!</p>
-    <?php else: ?>
-      <ul>
-        <?php foreach ($userBadges as $b): ?>
-          <li class="subtle">
-            <strong><?= htmlspecialchars($b['name']) ?></strong><br>
-            <?= htmlspecialchars($b['description']) ?><br>
-            <small>Awarded at: <?= htmlspecialchars($b['awarded_at']) ?></small>
-          </li>
-        <?php endforeach; ?>
-      </ul>
-    <?php endif; ?>
-  </div>
-
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+        <div style="color:<?= $s['color'] ?>; filter:drop-shadow(0 0 5px <?= $s['color'] ?>);">
+          <?= $s['icon'] ?>
+        </div>
+      </div>
+      
+      <div style="
+        font-family:var(--display); font-weight:800; font-size:38px;
+        color: <?= $s['color'] ?>; text-shadow:0 0 15px <?= $s['color'] ?>40;
+        line-height:1;
+      "><?= $s['value'] ?></div>
+      <div style="font-family:var(--mono); font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); margin-top:8px;"><?= $s['label'] ?></div>
+      <div style="font-size:12px; color:var(--text-muted); margin-top:4px;" class="mono"><?= $s['sub'] ?></div>
+    </div>
+  <?php endforeach; ?>
 </div>
 
-<!-- Global progression (existing, unchanged) -->
+<!-- ── Badges ── -->
 <div class="card">
-  <div class="hx">Progression globale</div>
-
-  <p class="subtle">
-    <?= $doneModules ?> modules complétés / <?= $totalModules ?>
-  </p>
-
-  <div style="
-      width:100%;
-      background:#1a1f2b;
-      border-radius:8px;
-      overflow:hidden;
-      height:18px;
-      margin-top:8px;
-  ">
-    <div style="
-        width:<?= (int)$progressPercent ?>%;
-        background:linear-gradient(90deg,#00f5ff,#00ff90);
-        height:100%;
-        transition:0.4s;
-    "></div>
+  <div class="hx">
+    Security Clearance Badges
+    <span class="hx-mono"><?= count($userBadges) ?> ACQUIRED</span>
   </div>
 
-  <p class="subtle mt-1">
-    <?= (int)$progressPercent ?>% terminé
-  </p>
-</div>
-
-<!-- Per-module progress (new) -->
-<div class="card">
-  <div class="hx">Module progress</div>
-
-  <?php if (!$modules): ?>
-    <p class="subtle">No active modules found.</p>
+  <?php if (!$userBadges): ?>
+    <div style="text-align:center; padding:32px 0;">
+      <div style="font-size:48px; margin-bottom:16px; opacity:0.2; color:var(--purple); filter:drop-shadow(0 0 10px rgba(176,38,255,0.5));">
+        <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15l-3 3-3-3v-4l3-3 3 3v4z"></path></svg>
+      </div>
+      <p class="subtle mono" style="text-transform:uppercase; letter-spacing:1px;">No clearance attributes found.<br>Execute training modules to upgrade clearance.</p>
+    </div>
   <?php else: ?>
     <div class="row">
-      <?php foreach ($modules as $m): ?>
-        <?php
-          $code = $m['code'] ?? '';
-          $p = ($code && isset($progressByCode[$code])) ? $progressByCode[$code] : null;
-          $isDone = ($p && (int)$p['completed'] === 1);
-        ?>
-        <div class="card" style="flex:1; min-width:260px">
-          <div class="card-title"><?= htmlspecialchars($m['title']) ?></div>
-          <p class="subtle"><?= htmlspecialchars($m['description']) ?></p>
-
-          <?php if ($isDone): ?>
-            <span class="badge badge-ok">✅ Completed</span>
-            <?php if (!empty($p['completed_at'])): ?>
-              <div class="subtle mt-1"><small>Completed at: <?= htmlspecialchars($p['completed_at']) ?></small></div>
-            <?php endif; ?>
-          <?php else: ?>
-            <span class="badge badge-warn">⏳ To do</span>
-          <?php endif; ?>
-
-          <div class="mt-2">
-            <a class="btn btn-primary" href="<?= htmlspecialchars($m['link']) ?>">Open</a>
+      <?php foreach ($userBadges as $b): ?>
+        <div style="
+          flex:1; min-width:240px;
+          padding:16px 20px;
+          border-radius:12px;
+          border:1px solid rgba(176, 38, 255, 0.2);
+          background:rgba(176, 38, 255, 0.05);
+          display:flex; gap:16px; align-items:flex-start;
+          transition: transform 0.2s, box-shadow 0.2s;
+        " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 5px 15px rgba(176,38,255,0.2)';" onmouseout="this.style.transform='none'; this.style.boxShadow='none';">
+          <div style="
+            width:48px; height:48px; border-radius:10px; flex-shrink:0;
+            background:rgba(176, 38, 255, 0.1); border:1px solid rgba(176, 38, 255, 0.4);
+            display:grid; place-items:center;
+            color:var(--purple); font-size:24px;
+            box-shadow: 0 0 10px rgba(176, 38, 255, 0.3);
+          ">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15l-3 3-3-3v-4l3-3 3 3v4z"></path></svg>
+          </div>
+          <div>
+            <div style="font-family:var(--display); font-weight:700; font-size:16px; color:#fff; text-shadow:0 0 5px rgba(255,255,255,0.3); margin-bottom:4px; text-transform:uppercase; letter-spacing:1px;">
+              <?= htmlspecialchars($b['name']) ?>
+            </div>
+            <div style="font-size:13px; color:var(--text-muted); line-height:1.4;"><?= htmlspecialchars($b['description']) ?></div>
+            <div style="font-family:var(--mono); font-size:10px; color:var(--purple); margin-top:8px; letter-spacing:1px;">
+              ACQUIRED: <?= date('d M Y', strtotime($b['awarded_at'])) ?>
+            </div>
           </div>
         </div>
       <?php endforeach; ?>
@@ -292,112 +211,144 @@ include __DIR__ . '/_partials/header.php';
   <?php endif; ?>
 </div>
 
-<!-- Recent quiz sessions (existing) -->
+<!-- ── Module Progress ── -->
 <div class="card">
-  <div class="hx">Recent quiz sessions</div>
-  <?php if (!$lastQuizSessions): ?>
-    <p class="subtle">No quiz sessions yet.</p>
+  <div class="hx">Training Modules Setup</div>
+
+  <?php if (!$modules): ?>
+    <p class="subtle">No active modules found in the database.</p>
   <?php else: ?>
-    <table style="width:100%; border-collapse:collapse; font-size:14px;">
-      <thead>
-        <tr>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Date</th>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Questions</th>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Correct</th>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Score</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($lastQuizSessions as $s): ?>
-          <tr>
-            <td style="padding:6px;"><?= htmlspecialchars($s['started_at']) ?></td>
-            <td style="padding:6px;"><?= (int)$s['total_questions'] ?></td>
-            <td style="padding:6px;"><?= (int)$s['correct_answers'] ?></td>
-            <td style="padding:6px;"><?= number_format((float)$s['score_percent'], 1) ?> %</td>
-          </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
+    <div class="row">
+      <?php foreach ($modules as $i => $m):
+        $code  = $m['code'] ?? '';
+        $p     = ($code && isset($progressByCode[$code])) ? $progressByCode[$code] : null;
+        $isDone = ($p && (int)$p['completed'] === 1);
+        $lvl   = $m['level'] ?? 'beginner';
+        $levelColor = ['beginner'=>'var(--green)','intermediate'=>'var(--amber)','advanced'=>'var(--red)'][$lvl] ?? 'var(--green)';
+      ?>
+        <div class="card" style="flex:1; min-width:260px; animation-delay:<?= $i*.06 ?>s;">
+
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+            <span style="
+              font-family:var(--mono); font-size:11px;
+              letter-spacing:2px; color:var(--cyan); text-transform:uppercase; text-shadow:0 0 5px rgba(0,240,255,0.3);
+            ">MODULE // <?= str_pad($i+1,2,'0',STR_PAD_LEFT) ?></span>
+            <?php if ($isDone): ?>
+              <span class="badge badge-ok">✓ SECURED</span>
+            <?php else: ?>
+              <span class="badge" style="color:var(--text-dim); border-color:var(--text-dim);">PENDING</span>
+            <?php endif; ?>
+          </div>
+
+          <div class="card-title"><?= htmlspecialchars($m['title']) ?></div>
+          <p class="subtle" style="margin:8px 0 16px; font-size:13px; line-height:1.5;"><?= htmlspecialchars($m['description']) ?></p>
+
+          <?php if ($isDone && !empty($p['completed_at'])): ?>
+            <div style="font-family:var(--mono); font-size:10px; color:var(--green); margin-bottom:16px; letter-spacing:1px; background:rgba(0,255,136,0.05); padding:4px 8px; border-radius:4px; display:inline-block;">
+              EXECUTION DATE: <?= date('d/m/Y', strtotime($p['completed_at'])) ?>
+            </div>
+          <?php endif; ?>
+
+          <div style="margin-top:auto;">
+             <a class="btn <?= $isDone ? 'btn-ghost' : 'btn-primary' ?>" href="<?= htmlspecialchars($m['link']) ?>" style="font-size:12px; padding:10px 16px; width:100%;">
+                <?= $isDone ? 'Review Intel' : 'Initiate Sequence →' ?>
+             </a>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    </div>
   <?php endif; ?>
 </div>
 
-<!-- Recent phishing attempts (existing) -->
-<div class="card">
-  <div class="hx">Recent phishing attempts</div>
-  <?php if (!$lastPhishAttempts): ?>
-    <p class="subtle">No phishing simulation activity yet.</p>
-  <?php else: ?>
-    <table style="width:100%; border-collapse:collapse; font-size:14px;">
-      <thead>
-        <tr>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Email ID</th>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Your choice</th>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Result</th>
-          <th style="border-bottom:1px solid #1a2a42; text-align:left; padding:6px;">Date</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($lastPhishAttempts as $a): ?>
+<!-- ── Recent Sessions ── -->
+<div class="row">
+
+  <!-- Quiz sessions table -->
+  <div class="card" style="flex:2; min-width:320px;">
+    <div class="hx" style="margin-bottom:20px;">
+      Simulation Logs
+      <a class="btn btn-primary" href="/quiz.php" style="font-size:11px; padding:8px 14px; margin-left:auto;">New Simulation</a>
+    </div>
+
+    <?php if (!$lastQuizSessions): ?>
+      <p class="subtle mono">No simulation logs found.</p>
+    <?php else: ?>
+      <table>
+        <thead>
           <tr>
-            <td style="padding:6px;"><?= (int)$a['email_id'] ?></td>
-            <td style="padding:6px;"><?= htmlspecialchars($a['user_choice']) ?></td>
-            <td style="padding:6px;">
-              <?php if ((int)$a['correct'] === 1): ?>
-                <span class="badge badge-ok">Correct</span>
-              <?php else: ?>
-                <span class="badge badge-warn">Incorrect</span>
-              <?php endif; ?>
-            </td>
-            <td style="padding:6px;"><?= htmlspecialchars($a['attempted_at']) ?></td>
+            <th>Timestamp</th>
+            <th style="text-align:center;">QTT</th>
+            <th style="text-align:center;">Valid</th>
+            <th>Integrity</th>
           </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
-  <?php endif; ?>
-</div>
-
-<!-- Recent activity (new, compact) -->
-<div class="card">
-  <div class="hx">Recent activity (quick view)</div>
-
-  <div class="row">
-    <div class="card" style="flex:1; min-width:260px">
-      <div class="card-title">Last 3 quiz sessions</div>
-      <?php if (!$recentQuiz): ?>
-        <p class="subtle">No recent quiz sessions.</p>
-      <?php else: ?>
-        <ul>
-          <?php foreach ($recentQuiz as $q): ?>
-            <li class="subtle">
-              <?= htmlspecialchars($q['started_at']) ?> —
-              <strong><?= number_format((float)$q['score_percent'], 1) ?>%</strong>
-              (<?= (int)$q['correct_answers'] ?>/<?= (int)$q['total_questions'] ?>)
-            </li>
+        </thead>
+        <tbody>
+          <?php foreach ($lastQuizSessions as $s):
+            $score = (float)$s['score_percent'];
+            $scoreColor = $score >= 80 ? 'var(--green)' : ($score >= 60 ? 'var(--amber)' : 'var(--red)');
+          ?>
+            <tr>
+              <td class="mono" style="font-size:12px; color:var(--text-muted);"><?= date('d/m, H:i', strtotime($s['started_at'])) ?></td>
+              <td style="text-align:center; font-family:var(--mono);"><?= (int)$s['total_questions'] ?></td>
+              <td style="text-align:center; font-family:var(--mono);"><?= (int)$s['correct_answers'] ?></td>
+              <td>
+                <span style="
+                  font-family:var(--mono); font-size:13px;
+                  color:<?= $scoreColor ?>; font-weight:700;
+                  text-shadow:0 0 5px <?= $scoreColor ?>40;
+                "><?= number_format($score,1) ?>%</span>
+              </td>
+            </tr>
           <?php endforeach; ?>
-        </ul>
-      <?php endif; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
+  </div>
+
+  <!-- Phishing attempts table -->
+  <div class="card" style="flex:2; min-width:320px;">
+    <div class="hx" style="margin-bottom:20px;">
+      Threat Detection Logs
+      <a class="btn" href="/phishing.php" style="font-size:11px; padding:8px 14px; margin-left:auto;">Open Inbox</a>
     </div>
 
-    <div class="card" style="flex:1; min-width:260px">
-      <div class="card-title">Last 3 phishing attempts</div>
-      <?php if (!$recentPhish): ?>
-        <p class="subtle">No recent phishing attempts.</p>
-      <?php else: ?>
-        <ul>
-          <?php foreach ($recentPhish as $p): ?>
-            <li class="subtle">
-              <?= htmlspecialchars($p['attempted_at']) ?> —
-              Email #<?= (int)$p['email_id'] ?> —
-              <?php if ((int)$p['correct'] === 1): ?>
-                <span class="badge badge-ok">Correct</span>
-              <?php else: ?>
-                <span class="badge badge-warn">Incorrect</span>
-              <?php endif; ?>
-            </li>
+    <?php if (!$lastPhishAttempts): ?>
+      <p class="subtle mono">No threat logs detected.</p>
+    <?php else: ?>
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th style="text-align:center;">Target ID</th>
+            <th>Action Taken</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($lastPhishAttempts as $a): ?>
+            <tr>
+              <td class="mono" style="font-size:12px; color:var(--text-muted);"><?= date('d/m, H:i', strtotime($a['attempted_at'])) ?></td>
+              <td style="text-align:center;">
+                <span style="font-family:var(--mono); font-size:11px; color:var(--cyan); background:rgba(0,240,255,0.1); padding:2px 6px; border-radius:3px;">OBJ-<?= (int)$a['email_id'] ?></span>
+              </td>
+              <td>
+                <span style="
+                  font-family:var(--mono); font-size:11px; letter-spacing:1px;
+                  color:<?= $a['user_choice']==='phishing' ? 'var(--red)' : 'var(--cyan)' ?>;
+                "><?= strtoupper(htmlspecialchars($a['user_choice'])) ?></span>
+              </td>
+              <td>
+                <?php if ((int)$a['correct'] === 1): ?>
+                  <span class="badge badge-ok" style="font-size:10px;">SUCCESS</span>
+                <?php else: ?>
+                  <span class="badge badge-danger" style="font-size:10px;">FAILED</span>
+                <?php endif; ?>
+              </td>
+            </tr>
           <?php endforeach; ?>
-        </ul>
-      <?php endif; ?>
-    </div>
+        </tbody>
+      </table>
+    <?php endif; ?>
   </div>
 </div>
 

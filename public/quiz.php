@@ -4,17 +4,15 @@ require_once __DIR__ . '/../includes/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/badges.php';
 
-require_auth(); // réservé aux utilisateurs connectés
+require_auth();
 
-// Nombre de questions par session de quiz
 const QUIZ_QUESTIONS_PER_SESSION = 5;
 
 function start_new_quiz(PDO $pdo): ?array {
-    // Récupérer tous les IDs de questions
     $stmt = $pdo->query("SELECT id FROM questions");
     $rows = $stmt->fetchAll();
     if (!$rows) {
-        return null; // aucun quiz possible
+        return null;
     }
 
     $allIds = array_column($rows, 'id');
@@ -23,12 +21,10 @@ function start_new_quiz(PDO $pdo): ?array {
     $total = min(QUIZ_QUESTIONS_PER_SESSION, count($allIds));
     $questionIds = array_slice($allIds, 0, $total);
 
-    // Créer une nouvelle session de quiz en DB
     $ins = $pdo->prepare("INSERT INTO quiz_sessions (user_id) VALUES (?)");
     $ins->execute([ current_user()['id'] ]);
     $sessionId = (int)$pdo->lastInsertId();
 
-    // Stocker l'état dans $_SESSION
     $_SESSION['current_quiz'] = [
         'session_id'     => $sessionId,
         'question_ids'   => $questionIds,
@@ -51,22 +47,19 @@ $feedback = null;
 $question = null;
 $finalResult = null;
 
-// Si on demande explicitement un nouveau quiz (?start=1)
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['start'])) {
     start_new_quiz($pdo);
 }
 
-// Charger l'état courant
 $currentQuiz = get_current_quiz();
 
-// Soumission d'une réponse
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? '')) {
-        $feedback = ['type' => 'error', 'msg' => 'Token CSRF invalide.'];
+        $feedback = ['type' => 'error', 'msg' => 'Invalid CSRF Token.'];
     } else {
         $currentQuiz = get_current_quiz();
         if (!$currentQuiz) {
-            $feedback = ['type' => 'error', 'msg' => 'Session de quiz introuvable.'];
+            $feedback = ['type' => 'error', 'msg' => 'Quiz session not found.'];
         } else {
             $sessionId = (int)$currentQuiz['session_id'];
             $questionIds = $currentQuiz['question_ids'];
@@ -77,19 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $choice     = $_POST['choice'] ?? '';
 
             if (!$questionId || !in_array($choice, ['A','B','C','D'], true)) {
-                $feedback = ['type' => 'error', 'msg' => 'Soumission invalide.'];
+                $feedback = ['type' => 'error', 'msg' => 'Invalid submission.'];
             } else {
-                // Charger la question pour vérifier
                 $st = $pdo->prepare("SELECT * FROM questions WHERE id = ?");
                 $st->execute([$questionId]);
                 $q = $st->fetch();
 
                 if (!$q) {
-                    $feedback = ['type' => 'error', 'msg' => 'Question introuvable.'];
+                    $feedback = ['type' => 'error', 'msg' => 'Question not found.'];
                 } else {
                     $is_correct = ($choice === $q['correct_choice']) ? 1 : 0;
 
-                    // Enregistrer la tentative dans attempts
                     $ins = $pdo->prepare("
                         INSERT INTO attempts (user_id, question_id, chosen_choice, is_correct, session_id)
                         VALUES (?, ?, ?, ?, ?)
@@ -102,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $sessionId
                     ]);
 
-                    // Mettre à jour le score en session
                     if ($is_correct) {
                         $currentQuiz['correct_count']++;
                     }
@@ -115,20 +105,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ];
 
                     $msg = $is_correct
-                        ? "✅ Bonne réponse !"
-                        : "❌ Mauvaise réponse. La bonne réponse était {$q['correct_choice']} : " .
-                          htmlspecialchars($labels[$q['correct_choice']] ?? '');
+                        ? "MATCH // Answer Correct."
+                        : "MISMATCH // Correct value was {$q['correct_choice']}: " . htmlspecialchars($labels[$q['correct_choice']] ?? '');
 
                     $feedback = [
                         'type' => $is_correct ? 'ok' : 'warn',
                         'msg'  => $msg
                     ];
 
-                    // Passer à la question suivante
                     $currentQuiz['current_index']++;
                     $_SESSION['current_quiz'] = $currentQuiz;
 
-                    // Si on a terminé toutes les questions
                     if ($currentQuiz['current_index'] >= $totalQuestions) {
                         $correct = $currentQuiz['correct_count'];
                         $scorePercent = $totalQuestions > 0 ? ($correct / $totalQuestions) * 100 : 0;
@@ -146,7 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'score'   => $scorePercent
                         ];
 
-                        // 🔥 Recalculate badges after quiz session
                         recalculate_user_badges($pdo, current_user()['id']);
 
                         clear_current_quiz();
@@ -156,13 +142,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 } else {
-    // GET : si pas de session en cours, tenter d'en démarrer une
     if (!$currentQuiz) {
         $currentQuiz = start_new_quiz($pdo);
     }
 }
 
-// Si on a encore une session et pas de résultat final, charger la question courante
 if (!$finalResult && $currentQuiz) {
     $questionIds = $currentQuiz['question_ids'];
     $currentIndex = $currentQuiz['current_index'];
@@ -179,29 +163,44 @@ if (!$finalResult && $currentQuiz) {
 include __DIR__ . '/_partials/header.php';
 ?>
 
-<div class="card">
-  <div class="hx">Quiz — Session</div>
+<div class="card" style="max-width:700px; margin:0 auto;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.05);">
+    <div class="hx" style="margin:0;">Knowledge Assessment Sequence</div>
+    <div class="status-indicator">
+      <span class="status-dot online"></span>
+      <span class="mono" style="font-size:10px; color:var(--cyan); letter-spacing:1px; text-transform:uppercase;">Session <?= $currentQuiz ? htmlspecialchars($currentQuiz['session_id']) : 'Complete' ?> Active</span>
+    </div>
+  </div>
 
   <?php if ($finalResult): ?>
     <!-- Écran final -->
-    <p class="subtle">
-      Session terminée. Votre score :
-      <strong><?= (int)$finalResult['correct'] ?>/<?= (int)$finalResult['total'] ?></strong>
-      (<?= number_format($finalResult['score'], 1) ?> %)
-    </p>
-    <div class="mt-3">
-      <a class="btn btn-primary" href="/quiz.php?start=1">Recommencer un quiz</a>
-      <a class="btn" href="/index.php">Retour à l’accueil</a>
+    <div style="text-align:center; padding:40px 20px;">
+      <div style="font-family:var(--display); font-size:64px; font-weight:800; line-height:1; margin-bottom:16px; color:<?= $finalResult['score'] >= 80 ? 'var(--green)' : ($finalResult['score'] >= 50 ? 'var(--amber)' : 'var(--red)') ?>; text-shadow:0 0 20px <?= $finalResult['score'] >= 80 ? 'var(--green)' : ($finalResult['score'] >= 50 ? 'var(--amber)' : 'var(--red)') ?>50;">
+        <?= number_format($finalResult['score'], 1) ?>%
+      </div>
+      <p class="subtle mono" style="font-size:14px; text-transform:uppercase; margin-bottom:8px;">
+        Assessment Complete // Score Validated
+      </p>
+      <p style="font-size:16px; margin-bottom:32px; color:var(--text-bright);">
+        Integrity Level: <strong><?= (int)$finalResult['correct'] ?> / <?= (int)$finalResult['total'] ?></strong> Data Points Matched.
+      </p>
+      <div style="display:flex; gap:16px; justify-content:center;">
+        <a class="btn btn-primary" href="/quiz.php?start=1">Initialize New Sequence</a>
+        <a class="btn" href="/dashboard.php">Return to Command Center</a>
+      </div>
     </div>
 
   <?php elseif (!$question): ?>
-    <p>Aucune question disponible pour le moment.</p>
-    <a class="btn" href="/index.php">Retour</a>
+    <div style="padding:40px; text-align:center;">
+      <p class="subtle mono" style="margin-bottom:24px;">ERROR: Sequence database empty. No queries available.</p>
+      <a class="btn" href="/dashboard.php">Abort Sequence</a>
+    </div>
 
   <?php else: ?>
     <?php
       $currentIndex = $currentQuiz['current_index'] + 1;
       $totalQuestions = count($currentQuiz['question_ids']);
+      $progressPct = ($currentIndex / $totalQuestions) * 100;
     ?>
 
     <?php if ($feedback): ?>
@@ -209,65 +208,68 @@ include __DIR__ . '/_partials/header.php';
         $cls = $feedback['type']==='ok' ? 'badge badge-ok'
              : ($feedback['type']==='warn' ? 'badge badge-warn' : 'badge badge-danger');
       ?>
-      <p class="<?= $cls ?>"><?= htmlspecialchars($feedback['msg']) ?></p>
-    <?php else: ?>
-      <p class="subtle">Réponds à chaque question. Le score sera affiché à la fin de la session.</p>
+      <div style="margin-bottom:24px; text-align:center;">
+        <span class="<?= $cls ?>" style="font-size:13px; padding:10px 16px; display:inline-block; box-shadow:0 0 15px rgba(0,0,0,0.5);"><?= htmlspecialchars($feedback['msg']) ?></span>
+      </div>
     <?php endif; ?>
 
-    <p class="subtle mt-1">
-      Question <?= $currentIndex ?> / <?= $totalQuestions ?>
-    </p>
+    <!-- Progress bar -->
+    <div style="margin-bottom:24px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+        <span class="mono" style="font-size:11px; color:var(--cyan); letter-spacing:1px; text-transform:uppercase;">Query <?= $currentIndex ?> of <?= $totalQuestions ?></span>
+        <span class="mono" style="font-size:11px; color:var(--text-dim);"><?= round($progressPct) ?>% LOADED</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" style="width:<?= $progressPct ?>%; background:var(--cyan); box-shadow:0 0 10px var(--cyan);"></div>
+      </div>
+    </div>
 
-    <form method="post" class="mt-2">
+    <form method="post" class="mt-2" style="position:relative; z-index:2;">
       <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token()) ?>">
       <input type="hidden" name="question_id" value="<?= (int)$question['id'] ?>">
 
-      <p style="font-weight:700; font-size:18px">
-        <?= htmlspecialchars($question['question_text']) ?>
-      </p>
+      <div style="background:rgba(0,0,0,0.3); padding:24px; border-radius:8px; border-left:3px solid var(--purple); margin-bottom:24px;">
+        <p style="font-family:var(--display); font-weight:600; font-size:18px; line-height:1.5; color:var(--text-bright); margin:0;">
+          <?= nl2br(htmlspecialchars($question['question_text'])) ?>
+        </p>
+      </div>
 
-      <?php if (!empty($question['choice_a'])): ?>
-      <label class="choice">
-        <input type="radio" name="choice" value="A" required>
-        <div><strong>A.</strong> <?= htmlspecialchars($question['choice_a']) ?></div>
-      </label>
-      <?php endif; ?>
+      <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:32px;">
+        <?php foreach (['A', 'B', 'C', 'D'] as $opt): 
+          $key = 'choice_' . strtolower($opt);
+          if (empty($question[$key])) continue;
+        ?>
+        <label class="choice" style="position:relative; display:flex; align-items:center; padding:16px 20px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; cursor:pointer; transition:all 0.2s;">
+          <input type="radio" name="choice" value="<?= $opt ?>" required style="position:absolute; opacity:0; width:0; height:0;">
+          <div class="choice-marker" style="width:24px; height:24px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); margin-right:16px; display:grid; place-items:center; font-family:var(--mono); font-size:12px; font-weight:700; color:var(--text-dim); transition:all 0.2s;">
+            <?= $opt ?>
+          </div>
+          <div style="flex:1; font-size:15px; color:var(--text-bright); line-height:1.4;">
+            <?= htmlspecialchars($question[$key]) ?>
+          </div>
+          <style>
+            label.choice:hover { background:rgba(0, 240, 255, 0.05); border-color:rgba(0, 240, 255, 0.3); transform:translateX(5px); }
+            label.choice input:checked + .choice-marker { background:var(--cyan); border-color:var(--cyan); color:#000; box-shadow:0 0 10px rgba(0,240,255,0.5); }
+            label.choice input:checked ~ div { color:var(--cyan); }
+            label.choice:has(input:checked) { border-color:var(--cyan); background:rgba(0, 240, 255, 0.05); }
+          </style>
+        </label>
+        <?php endforeach; ?>
+      </div>
 
-      <?php if (!empty($question['choice_b'])): ?>
-      <label class="choice">
-        <input type="radio" name="choice" value="B" required>
-        <div><strong>B.</strong> <?= htmlspecialchars($question['choice_b']) ?></div>
-      </label>
-      <?php endif; ?>
-
-      <?php if (!empty($question['choice_c'])): ?>
-      <label class="choice">
-        <input type="radio" name="choice" value="C" required>
-        <div><strong>C.</strong> <?= htmlspecialchars($question['choice_c']) ?></div>
-      </label>
-      <?php endif; ?>
-
-      <?php if (!empty($question['choice_d'])): ?>
-      <label class="choice">
-        <input type="radio" name="choice" value="D" required>
-        <div><strong>D.</strong> <?= htmlspecialchars($question['choice_d']) ?></div>
-      </label>
-      <?php endif; ?>
-
-      <div class="mt-3">
-        <button class="btn btn-primary" type="submit">Valider</button>
+      <div style="text-align:right;">
+        <button class="btn btn-primary" type="submit" style="padding:12px 24px; font-size:14px; letter-spacing:1px;">
+          Submit Response <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:8px;"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
       </div>
     </form>
   <?php endif; ?>
 </div>
 
-<div class="card" style="opacity:.95">
-  <div class="hx">Historique rapide</div>
-  <p class="subtle">
-    Chaque réponse est enregistrée dans <code>attempts</code> avec un
-    <code>session_id</code>. Le résumé de la session est stocké dans
-    <code>quiz_sessions</code>.
-  </p>
+<div style="max-width:700px; margin:24px auto 0; text-align:center;">
+    <p class="mono subtle" style="font-size:10px; text-transform:uppercase; letter-spacing:1px;">
+        Assessment data is securely logged in [attempts] table with corresponding [session_id].
+    </p>
 </div>
 
 <?php include __DIR__ . '/_partials/footer.php'; ?>
