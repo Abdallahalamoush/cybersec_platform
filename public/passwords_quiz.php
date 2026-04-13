@@ -50,6 +50,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach ($questions as $index => $q) {
         $userAnswer = (int)($_POST["q$index"] ?? -1);
         if ($userAnswer === $q['answer']) {
+            $correct++;
+        }
+    }
+
+    $score = round(($correct / count($questions)) * 100);
+
+    if ($score >= 60) {
+        // mark module completed
+        $stmt = $pdo->prepare("
+            INSERT INTO module_progress (user_id, module_code, completed, completed_at)
+            VALUES (?, 'passwords', 1, NOW())
+            ON DUPLICATE KEY UPDATE completed = 1, completed_at = NOW()
+        ");
+        $stmt->execute([$userId]);
+
+        // award badge
+        recalculate_user_badges($pdo, $userId);
+    }
+}
+
+include __DIR__ . '/_partials/header.php';
+?>
+
+<div class="card" style="max-width:800px; margin:0 auto; padding:0; overflow:hidden;">
+  <!-- Header -->
+  <div style="padding:32px 32px 24px; border-bottom:1px solid rgba(255,255,255,0.05); background:radial-gradient(ellipse at top right, rgba(0, 240, 255, 0.1), transparent 60%);">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
       <div>
         <div class="hx" style="margin-bottom:8px; display:flex; align-items:center; gap:12px;">
           <div style="width:40px; height:40px; border-radius:8px; background:rgba(0, 240, 255, 0.1); border:1px solid rgba(0, 240, 255, 0.3); display:grid; place-items:center; color:var(--cyan);">

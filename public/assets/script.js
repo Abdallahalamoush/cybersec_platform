@@ -81,54 +81,63 @@ function initMatrixRain() {
     const canvas = document.getElementById('matrix-rain');
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    
-    // Resize canvas to a lower resolution and scale up to fit screen for performance
-    const dpr = 0.5; // Render at 50% resolution to save processing power
-    const resizeCanvas = () => {
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
-        ctx.scale(dpr, dpr);
-    };
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-=[]{}|;:,.<>?/アイウエオカキクケコサシスセソタチツテトナニヌネノ';
-    const drops = [];
-    const fontSize = 16;
-    const columns = (window.innerWidth) / fontSize;
-
-    for (let x = 0; x < columns; x++) {
-        drops[x] = 1;
+    // Disable on mobile entirely
+    if (window.innerWidth < 768) {
+        canvas.style.display = 'none';
+        return;
     }
 
-    // Use requestAnimationFrame with a throttle for smoother performance
+    const ctx = canvas.getContext('2d');
+
+    // Render at 25% resolution and scale up — massive perf gain
+    const dpr = 0.25;
+    canvas.width  = window.innerWidth  * dpr;
+    canvas.height = window.innerHeight * dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // no ctx.scale needed
+
+    // Fewer, simpler characters
+    const chars = '01ABCDEF@#$%';
+    const fontSize = 10;
+    const columns  = Math.floor(canvas.width / fontSize);
+    const drops    = Array(columns).fill(1);
+
     let lastDrawTime = 0;
-    const throttle = 50; // Minimum ms between frames (approx 20fps)
+    let animId;
 
     function draw(timestamp) {
-        requestAnimationFrame(draw);
-        if (timestamp - lastDrawTime < throttle) return;
+        animId = requestAnimationFrame(draw);
+
+        // Drop to ~8fps for the rain — imperceptible difference, huge savings
+        if (timestamp - lastDrawTime < 120) return;
         lastDrawTime = timestamp;
 
-        ctx.fillStyle = 'rgba(3, 5, 8, 0.1)'; // slightly faster fade
-        ctx.fillRect(0, 0, (window.innerWidth), (window.innerHeight));
+        ctx.fillStyle = 'rgba(3, 5, 8, 0.15)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.fillStyle = '#00f0ff';
         ctx.font = `${fontSize}px monospace`;
 
         for (let i = 0; i < drops.length; i++) {
-            const text = chars.charAt(Math.floor(Math.random() * chars.length));
+            const text = chars[Math.floor(Math.random() * chars.length)];
             ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-
-            if (drops[i] * fontSize > window.innerHeight && Math.random() > 0.95) {
+            if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
                 drops[i] = 0;
             }
             drops[i]++;
         }
     }
 
-    requestAnimationFrame(draw);
+    // Pause when tab is hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            cancelAnimationFrame(animId);
+        } else {
+            lastDrawTime = 0;
+            animId = requestAnimationFrame(draw);
+        }
+    });
+
+    animId = requestAnimationFrame(draw);
 }
 
 function initHoverEffects() {

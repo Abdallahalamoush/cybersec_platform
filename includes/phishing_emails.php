@@ -80,4 +80,54 @@ Netflix Billing Team",
             'Strong threat / urgency is used to push a quick reaction.'
         ]
     ],
+
+    5 => [
+        'sender'  => 'Crédit Agricole <securite@credit-agricole-verification.net>',
+        'subject' => 'Action requise — Vérification de votre compte',
+        'body'    =>
+"Madame, Monsieur,
+
+Suite à une activité inhabituelle, nous avons temporairement limité l'accès
+à votre espace en ligne Crédit Agricole.
+
+Pour lever cette restriction, veuillez remplir le formulaire de vérification
+sécurisé en cliquant sur le lien ci-dessous :
+
+https://credit-agricole-verification.net/confirmer-identite
+
+Vous devrez renseigner votre numéro de carte, date d'expiration et CVV.
+
+Passé 48h, votre compte sera suspendu définitivement.
+
+Cordialement,
+Le Service Sécurité Crédit Agricole",
+        'type'        => 'phishing',
+        'explanation' => [
+            'Le domaine "credit-agricole-verification.net" est frauduleux — le vrai domaine est credit-agricole.fr.',
+            'Aucune banque ne demande votre CVV par email ou via un lien. C\'est un signal d\'alarme absolu.',
+            'L\'urgence artificielle ("48h", "suspendu définitivement") est une technique classique de pression psychologique.',
+        ]
+    ],
+
+    6 => [
+        'sender'  => 'DHL Express <noreply@dhl-delivery-confirm.com>',
+        'subject' => 'Votre colis est en attente — Document requis',
+        'body'    =>
+"Bonjour,
+
+Votre colis n°JD014600006281351046 est retenu en entrepôt.
+
+Pour finaliser la livraison, veuillez ouvrir le bon de livraison en pièce jointe
+(BON_LIVRAISON_5842.pdf) et confirmer votre adresse complète.
+
+Sans retour de votre part sous 24h, le colis sera retourné à l'expéditeur.
+
+Équipe DHL Express",
+        'type'        => 'phishing',
+        'explanation' => [
+            'Le domaine expéditeur "dhl-delivery-confirm.com" n\'est pas officiel — DHL utilise dhl.com.',
+            'Les transporteurs n\'envoient jamais de pièce jointe PDF à ouvrir pour confirmer une adresse. Ce fichier pourrait être un malware.',
+            'Le numéro de suivi au format inhabituel et l\'urgence ("24h, retourné") sont des indicateurs de phishing.',
+        ]
+    ],
 ];
