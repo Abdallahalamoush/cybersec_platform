@@ -1,4 +1,4 @@
-# 🛡️ Cyber Awareness Platform — v4.0.0
+# 🛡️ Cyber Awareness Platform
 
 > Plateforme e-learning de sensibilisation à la cybersécurité. Modules interactifs, simulations de phishing, quizzes adaptatifs et système de badges pour monter en compétences face aux menaces numériques.
 
