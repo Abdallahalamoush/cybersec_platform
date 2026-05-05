@@ -1,12 +1,13 @@
 <?php
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/session.php';
+require_once __DIR__ . '/../includes/levels.php';
 require_auth();
 
 $user   = current_user();
 $userId = $user['id'];
 
-// Badges
+// ── Badges ───────────────────────────────────────────────
 $badgeStmt = $pdo->prepare("
     SELECT b.name, b.description, ub.awarded_at
     FROM user_badges ub
@@ -17,7 +18,14 @@ $badgeStmt = $pdo->prepare("
 $badgeStmt->execute([$userId]);
 $userBadges = $badgeStmt->fetchAll();
 
-// Quiz summary
+// ── Level ────────────────────────────────────────────────
+$badgeCount = count($userBadges);
+$level      = compute_user_level($badgeCount);
+$nextThr    = next_level_threshold($badgeCount);
+$nextName   = next_level_name($badgeCount);
+$lvlProg    = progress_to_next_level($badgeCount);
+
+// ── Quiz summary ─────────────────────────────────────────
 $quizSummaryStmt = $pdo->prepare("
     SELECT COUNT(*) AS total_sessions,
            COALESCE(AVG(score_percent), 0) AS avg_score
@@ -26,7 +34,6 @@ $quizSummaryStmt = $pdo->prepare("
 $quizSummaryStmt->execute([$userId]);
 $quizSummary = $quizSummaryStmt->fetch() ?: ['total_sessions'=>0,'avg_score'=>0];
 
-// Quiz attempts
 $attemptsStmt = $pdo->prepare("
     SELECT COUNT(*) AS total_attempts,
            COALESCE(SUM(is_correct), 0) AS correct_attempts
@@ -37,7 +44,7 @@ $attempts = $attemptsStmt->fetch() ?: ['total_attempts'=>0,'correct_attempts'=>0
 $quizAccuracy = $attempts['total_attempts'] > 0
     ? ($attempts['correct_attempts'] / $attempts['total_attempts']) * 100 : 0;
 
-// Phishing summary
+// ── Phishing ─────────────────────────────────────────────
 $phishSummaryStmt = $pdo->prepare("
     SELECT COUNT(*) AS total_attempts,
            COALESCE(SUM(correct), 0) AS correct_attempts
@@ -48,7 +55,18 @@ $phish = $phishSummaryStmt->fetch() ?: ['total_attempts'=>0,'correct_attempts'=>
 $phishAccuracy = $phish['total_attempts'] > 0
     ? ($phish['correct_attempts'] / $phish['total_attempts']) * 100 : 0;
 
-// Last 5 quiz sessions
+// ── Challenge stats (Mois 7) ─────────────────────────────
+$chStmt = $pdo->prepare("
+    SELECT COUNT(*) AS sessions,
+           COALESCE(MAX(score), 0) AS best,
+           COALESCE(MIN(duration_seconds), 0) AS fastest
+    FROM challenge_sessions
+    WHERE user_id = ? AND finished_at IS NOT NULL
+");
+$chStmt->execute([$userId]);
+$chStats = $chStmt->fetch() ?: ['sessions'=>0,'best'=>0,'fastest'=>0];
+
+// ── Last quiz/phishing logs ──────────────────────────────
 $quizSessionsStmt = $pdo->prepare("
     SELECT total_questions, correct_answers, score_percent, started_at, finished_at
     FROM quiz_sessions WHERE user_id = ? AND finished_at IS NOT NULL
@@ -57,7 +75,6 @@ $quizSessionsStmt = $pdo->prepare("
 $quizSessionsStmt->execute([$userId]);
 $lastQuizSessions = $quizSessionsStmt->fetchAll();
 
-// Last 5 phishing attempts
 $phishLastStmt = $pdo->prepare("
     SELECT email_id, user_choice, correct, attempted_at
     FROM phishing_attempts WHERE user_id = ?
@@ -66,7 +83,7 @@ $phishLastStmt = $pdo->prepare("
 $phishLastStmt->execute([$userId]);
 $lastPhishAttempts = $phishLastStmt->fetchAll();
 
-// Module progress
+// ── Module progress ──────────────────────────────────────
 $stTotal = $pdo->query("SELECT COUNT(*) AS total FROM modules WHERE is_active = 1");
 $totalModules = (int)($stTotal->fetch()['total'] ?? 0);
 $stDone = $pdo->prepare("SELECT COUNT(*) AS done FROM module_progress WHERE user_id = ? AND completed = 1");
@@ -74,7 +91,6 @@ $stDone->execute([$userId]);
 $doneModules = (int)($stDone->fetch()['done'] ?? 0);
 $progressPercent = $totalModules > 0 ? round(($doneModules / $totalModules) * 100) : 0;
 
-// Per-module progress
 $modulesStmt = $pdo->query("SELECT id, code, title, description, level, link FROM modules WHERE is_active = 1 ORDER BY id ASC");
 $modules = $modulesStmt->fetchAll();
 $progressStmt = $pdo->prepare("SELECT module_code, completed, completed_at FROM module_progress WHERE user_id = ?");
@@ -87,31 +103,88 @@ foreach ($progressStmt->fetchAll() as $r) {
 include __DIR__ . '/_partials/header.php';
 ?>
 
-<!-- ── Header ── -->
-<div class="card" style="padding:28px 28px; border-top:2px solid var(--cyan); background:radial-gradient(ellipse at top left, rgba(0, 240, 255, 0.1), transparent 60%), var(--panel);">
+<!-- ── Header with Level ── -->
+<div class="card" style="padding:28px 28px; border-top:2px solid <?= $level['color'] ?>;
+                          background:radial-gradient(ellipse at top left, <?= $level['color'] ?>15, transparent 60%), var(--panel);
+                          box-shadow:0 0 30px <?= $level['color'] ?>15, var(--shadow);">
   <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
     <div style="display:flex; align-items:center; gap:20px;">
-      <div style="width:64px; height:64px; border-radius:12px; background:rgba(0, 240, 255, 0.1); border:1px solid rgba(0, 240, 255, 0.3); display:grid; place-items:center; color:var(--cyan); box-shadow:0 0 15px rgba(0, 240, 255, 0.2);">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+      <div style="width:64px; height:64px; border-radius:12px;
+                  background:<?= $level['color'] ?>15; border:2px solid <?= $level['color'] ?>;
+                  display:grid; place-items:center; color:<?= $level['color'] ?>;
+                  font-family:var(--display); font-weight:800; font-size:32px;
+                  box-shadow:0 0 20px <?= $level['glow'] ?>;">
+        <?= $level['icon'] ?>
       </div>
       <div>
-        <div style="font-family:var(--mono); font-size:11px; letter-spacing:3px; color:var(--cyan); text-transform:uppercase; margin-bottom:4px;">OPERATOR DASHBOARD</div>
+        <div class="mono" style="font-size:11px; letter-spacing:3px; color:<?= $level['color'] ?>;
+                                  text-transform:uppercase; margin-bottom:4px;">
+          OPERATOR LEVEL // <?= strtoupper($level['name']) ?>
+        </div>
         <div class="hx" style="margin-bottom:0; font-size:24px;"><?= htmlspecialchars($user['name']) ?></div>
-        <p class="subtle mono" style="font-size:12px; margin-top:2px;"><span style="color:var(--text-dim);">ID:</span> <?= htmlspecialchars($user['email']) ?></p>
+        <p class="subtle mono" style="font-size:12px; margin-top:2px;">
+          <span style="color:var(--text-dim);"><?= htmlspecialchars($level['subtitle']) ?> ·</span>
+          <?= $badgeCount ?> badge<?= $badgeCount > 1 ? 's' : '' ?>
+        </p>
       </div>
     </div>
-    <div style="text-align:right; background:rgba(0,0,0,0.4); padding:16px 24px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
-      <div style="font-family:var(--mono); font-size:11px; color:var(--text-dim); margin-bottom:8px; letter-spacing:2px;">OPERATOR CLEARANCE PROGRESS</div>
-      <div style="font-family:var(--display); font-weight:800; font-size:36px; color:var(--green); text-shadow:0 0 15px rgba(0, 255, 136, 0.5); line-height:1;"><?= $progressPercent ?>%</div>
-      <div style="margin-top:12px; width:200px; margin-left:auto;">
+    <div style="text-align:right; background:rgba(0,0,0,0.4); padding:16px 24px; border-radius:8px;
+                border:1px solid rgba(255,255,255,0.05); min-width:240px;">
+      <div class="mono" style="font-size:11px; color:var(--text-dim); margin-bottom:8px; letter-spacing:2px;">
+        OPERATOR CLEARANCE PROGRESS
+      </div>
+      <div style="font-family:var(--display); font-weight:800; font-size:36px;
+                  color:var(--green); text-shadow:0 0 15px rgba(0, 255, 136, 0.5); line-height:1;">
+        <?= $progressPercent ?>%
+      </div>
+      <div style="margin-top:12px;">
         <div class="progress-track" style="height:8px;">
-          <div class="progress-fill" style="width:<?= $progressPercent ?>%; background:linear-gradient(90deg, var(--cyan), var(--green)); box-shadow:0 0 10px rgba(0, 255, 136, 0.5);"></div>
+          <div class="progress-fill" style="width:<?= $progressPercent ?>%;
+               background:linear-gradient(90deg, var(--cyan), var(--green));
+               box-shadow:0 0 10px rgba(0, 255, 136, 0.5);"></div>
         </div>
-        <div style="font-family:var(--mono); font-size:10px; color:var(--cyan); margin-top:6px; text-align:right; letter-spacing:1px;">
-          <?= $doneModules ?> / <?= $totalModules ?> MODULES COMPLETED
+        <div class="mono" style="font-size:10px; color:var(--cyan); margin-top:6px;
+                                   text-align:right; letter-spacing:1px;">
+          <?= $doneModules ?> / <?= $totalModules ?> MODULES
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Level progress bar -->
+  <div style="margin-top:20px; padding:14px 18px; background:rgba(0,0,0,0.3);
+              border:1px solid <?= $level['color'] ?>30; border-radius:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+      <span class="mono" style="font-size:11px; color:<?= $level['color'] ?>; letter-spacing:2px;">
+        LEVEL PROGRESSION
+      </span>
+      <span class="mono" style="font-size:11px; color:var(--text-muted);">
+        <?php if ($nextThr === null): ?>
+          <span style="color:var(--green);">★ MAXED OUT — Elite Operator</span>
+        <?php else: ?>
+          <?= ($nextThr - $badgeCount) ?> more badge<?= ($nextThr - $badgeCount) > 1 ? 's' : '' ?> to <strong style="color:var(--text);"><?= $nextName ?></strong>
+        <?php endif; ?>
+      </span>
+    </div>
+    <div class="progress-track" style="height:5px;">
+      <div class="progress-fill" style="width:<?= $lvlProg ?>%;
+           background:<?= $level['color'] ?>;
+           box-shadow:0 0 8px <?= $level['glow'] ?>;"></div>
+    </div>
+  </div>
+
+  <!-- Quick actions row -->
+  <div style="margin-top:18px; display:flex; gap:12px; flex-wrap:wrap;">
+    <a href="/challenge.php" class="btn"
+       style="border-color:rgba(255,42,95,0.5); color:var(--red); background:rgba(255,42,95,0.08);
+              padding:10px 18px; font-size:12px;">
+      ⚡ Challenge Mode
+    </a>
+    <a href="/export_report.php" class="btn"
+       style="border-color:rgba(0,240,255,0.5); color:var(--cyan); background:rgba(0,240,255,0.08);
+              padding:10px 18px; font-size:12px;">
+      📄 Export Personal Report (PDF)
+    </a>
   </div>
 </div>
 
@@ -122,16 +195,17 @@ include __DIR__ . '/_partials/header.php';
       ['value'=>(int)$quizSummary['total_sessions'], 'label'=>'Simulations', 'sub'=>'completed', 'color'=>'var(--cyan)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>'],
       ['value'=>number_format($quizAccuracy,0).'%',  'label'=>'Accuracy', 'sub'=>$attempts['correct_attempts'].' correct', 'color'=>'var(--green)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>'],
       ['value'=>number_format($phishAccuracy,0).'%', 'label'=>'Phishing Detection', 'sub'=>$phish['total_attempts'].' inspected', 'color'=>'var(--amber)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'],
-      ['value'=>count($userBadges),                  'label'=>'Badges Acquired', 'sub'=>'clearance level', 'color'=>'var(--purple)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15l-3 3-3-3v-4l3-3 3 3v4z"></path></svg>'],
+      ['value'=>(int)$chStats['best'],               'label'=>'Best Challenge', 'sub'=>(int)$chStats['sessions'].' runs', 'color'=>'var(--red)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polyline></svg>'],
+      ['value'=>$badgeCount,                          'label'=>'Badges Acquired', 'sub'=>$level['name'].' tier', 'color'=>'var(--purple)', 'icon'=>'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15l-3 3-3-3v-4l3-3 3 3v4z"></path></svg>'],
     ];
     foreach ($kstats as $i => $s):
   ?>
-    <div class="card" style="flex:1; min-width:180px; animation-delay:<?= $i*.06 ?>s; display:flex; flex-direction:column; align-items:flex-start; position:relative; overflow:hidden;">
+    <div class="card" style="flex:1; min-width:160px; animation-delay:<?= $i*.06 ?>s; display:flex; flex-direction:column; align-items:flex-start; position:relative; overflow:hidden;">
       <div style="position:absolute; top:-20px; right:-20px; color:<?= $s['color'] ?>; opacity:0.1; transform:scale(3); pointer-events:none;"><?= $s['icon'] ?></div>
       <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
         <div style="color:<?= $s['color'] ?>; filter:drop-shadow(0 0 5px <?= $s['color'] ?>);"><?= $s['icon'] ?></div>
       </div>
-      <div style="font-family:var(--display); font-weight:800; font-size:38px; color:<?= $s['color'] ?>; text-shadow:0 0 15px <?= $s['color'] ?>40; line-height:1;"><?= $s['value'] ?></div>
+      <div style="font-family:var(--display); font-weight:800; font-size:34px; color:<?= $s['color'] ?>; text-shadow:0 0 15px <?= $s['color'] ?>40; line-height:1;"><?= $s['value'] ?></div>
       <div style="font-family:var(--mono); font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); margin-top:8px;"><?= $s['label'] ?></div>
       <div style="font-size:12px; color:var(--text-muted); margin-top:4px;" class="mono"><?= $s['sub'] ?></div>
     </div>
@@ -176,14 +250,13 @@ include __DIR__ . '/_partials/header.php';
   <?php endif; ?>
 </div>
 
-<!-- ── Module Progress (MOIS 6 — enrichi) ── -->
+<!-- ── Module Progress ── -->
 <div class="card">
   <div class="hx">
     Training Modules
     <span class="hx-mono"><?= $doneModules ?>/<?= $totalModules ?> COMPLETED</span>
   </div>
 
-  <!-- Global progress bar -->
   <div style="margin-bottom:28px; background:rgba(0,0,0,0.3); padding:16px 20px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
       <span class="mono" style="font-size:11px; color:var(--text-dim); letter-spacing:2px; text-transform:uppercase;">
@@ -223,7 +296,6 @@ include __DIR__ . '/_partials/header.php';
              border-left:3px solid <?= $isDone ? 'var(--green)' : 'rgba(255,255,255,0.06)' ?>;
              transition:border-color 0.3s;">
 
-          <!-- Module number + status -->
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
             <span style="font-family:var(--mono); font-size:11px; letter-spacing:2px;
                          color:var(--cyan); text-transform:uppercase;
@@ -238,13 +310,11 @@ include __DIR__ . '/_partials/header.php';
             <?php endif; ?>
           </div>
 
-          <!-- Title & description -->
           <div class="card-title" style="margin-bottom:6px;"><?= htmlspecialchars($m['title']) ?></div>
           <p class="subtle" style="margin:0 0 14px; font-size:13px; line-height:1.5;">
             <?= htmlspecialchars($m['description']) ?>
           </p>
 
-          <!-- Per-module mini progress bar -->
           <div style="margin-bottom:14px;">
             <div class="progress-track" style="height:3px; border-radius:99px;">
               <div class="progress-fill" style="width:<?= $isDone ? 100 : 0 ?>%;
@@ -254,7 +324,6 @@ include __DIR__ . '/_partials/header.php';
             </div>
           </div>
 
-          <!-- Level + completion date -->
           <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
             <span style="font-family:var(--mono); font-size:10px; letter-spacing:2px;
                          text-transform:uppercase; color:<?= $lvlColor ?>;
@@ -271,7 +340,6 @@ include __DIR__ . '/_partials/header.php';
             <?php endif; ?>
           </div>
 
-          <!-- CTA button -->
           <a class="btn <?= $isDone ? 'btn-ghost' : 'btn-primary' ?>"
              href="<?= htmlspecialchars($m['link']) ?>"
              style="font-size:12px; padding:10px 16px; width:100%; text-align:center; display:block;">
@@ -285,8 +353,6 @@ include __DIR__ . '/_partials/header.php';
 
 <!-- ── Recent Sessions ── -->
 <div class="row">
-
-  <!-- Quiz sessions table -->
   <div class="card" style="flex:2; min-width:320px;">
     <div class="hx" style="margin-bottom:20px;">
       Simulation Logs
@@ -324,7 +390,6 @@ include __DIR__ . '/_partials/header.php';
     <?php endif; ?>
   </div>
 
-  <!-- Phishing attempts table -->
   <div class="card" style="flex:2; min-width:320px;">
     <div class="hx" style="margin-bottom:20px;">
       Threat Detection Logs

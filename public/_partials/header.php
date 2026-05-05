@@ -26,18 +26,19 @@ $cp = basename($_SERVER['PHP_SELF'], '.php');
         </svg>
       </div>
       <span>Cyber Awareness</span>
-      <span class="badge">v4.0.0</span>
+      <span class="badge">v4.1.0</span>
     </a>
 
     <nav class="nav">
       <a href="/index.php"    <?= $cp==='index'     ? 'class="nav-active"' : '' ?>>Home</a>
       <?php if (current_user()): ?>
         <?php if ((current_user()['role'] ?? 'user') === 'admin'): ?>
-          <a href="/admin/modules.php" <?= $cp==='modules' ? 'class="nav-active"' : '' ?>>Admin Route</a>
+          <a href="/admin/modules.php" <?= $cp==='modules' ? 'class="nav-active"' : '' ?>>Admin</a>
         <?php endif; ?>
         <a href="/dashboard.php" <?= $cp==='dashboard' ? 'class="nav-active"' : '' ?>>Command Center</a>
         <a href="/quiz.php"      <?= $cp==='quiz'      ? 'class="nav-active"' : '' ?>>Simulations</a>
-        <a href="/phishing.php"  <?= $cp==='phishing'  ? 'class="nav-active"' : '' ?>>Phishing Intel</a>
+        <a href="/challenge.php" <?= $cp==='challenge' ? 'class="nav-active"' : '' ?> style="color:var(--red);">⚡ Challenge</a>
+        <a href="/phishing.php"  <?= $cp==='phishing'  ? 'class="nav-active"' : '' ?>>Phishing</a>
         <a href="/logout.php" style="color:var(--red); text-shadow:0 0 5px rgba(255,42,95,0.5); margin-left:8px;">Disconnect</a>
       <?php else: ?>
         <a href="/login.php"    <?= $cp==='login'    ? 'class="nav-active"' : '' ?>>Authenticate</a>
@@ -63,4 +64,4 @@ $cp = basename($_SERVER['PHP_SELF'], '.php');
   </div>
 </header>
 
-<main class="container stack">
+<main class="container stack">

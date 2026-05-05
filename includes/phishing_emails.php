@@ -130,4 +130,33 @@ Sans retour de votre part sous 24h, le colis sera retourné à l'expéditeur.
             'Le numéro de suivi au format inhabituel et l\'urgence ("24h, retourné") sont des indicateurs de phishing.',
         ]
     ],
+
+    // ── NOUVEAU MOIS 7 — Faux PDF interactif (pédagogique) ──
+    7 => [
+        'sender'  => 'Service RH <rh@entreprise-corp-secure.com>',
+        'subject' => 'Bulletin de salaire — Action requise avant le 30/04',
+        'body'    =>
+"Bonjour,
+
+Vous trouverez en pièce jointe votre bulletin de salaire du mois en cours.
+
+⚠ Une mise à jour de vos coordonnées bancaires est nécessaire pour le prochain virement.
+Merci d'ouvrir le PDF ci-joint et de remplir le formulaire intégré.
+
+Sans réponse sous 48h, votre prochain salaire ne pourra pas être versé.
+
+Cordialement,
+Service Ressources Humaines",
+        'type'        => 'phishing',
+        'attachment'  => [
+            'name' => 'BULLETIN_SALAIRE_AVRIL_2026.pdf',
+            'size' => '1.2 MB',
+            'fake' => true,
+        ],
+        'explanation' => [
+            'Le domaine "entreprise-corp-secure.com" est générique et suspect — un vrai service RH utilise le domaine officiel de l\'entreprise.',
+            'Aucun service RH légitime ne demande de coordonnées bancaires via un PDF interactif. Les changements RIB passent par un portail interne sécurisé.',
+            'L\'urgence ("48h", "salaire pas versé") est une technique de manipulation classique : ralentit ta réflexion, accélère ton clic.',
+        ]
+    ],
 ];
